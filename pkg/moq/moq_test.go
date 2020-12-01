@@ -246,45 +246,6 @@ func TestVariadicArguments(t *testing.T) {
 	}
 }
 
-// TestSliceResult tests to ensure slice return data type works as
-// expected.
-// see https://github.com/matryer/moq/issues/124
-func TestSliceResult(t *testing.T) {
-	m, err := New(Config{SrcDir: "testpackages/variadic"})
-	if err != nil {
-		t.Fatalf("moq.New: %s", err)
-	}
-
-	var buf bytes.Buffer
-	if err = m.Mock(&buf, "Echoer"); err != nil {
-		t.Errorf("m.Mock: %s", err)
-	}
-
-	golden := filepath.Join("testpackages/variadic", "echoer.golden.go")
-	if err := matchGoldenFile(golden, buf.Bytes()); err != nil {
-		t.Errorf("check golden file: %s", err)
-	}
-}
-
-// TestBlankID tests generation of mock where a method on the interface
-// uses a blank identifier.
-// See https://github.com/matryer/moq/issues/70
-func TestBlankID(t *testing.T) {
-	m, err := New(Config{SrcDir: "testpackages/blankid"})
-	if err != nil {
-		t.Fatalf("moq.New: %s", err)
-	}
-
-	var buf bytes.Buffer
-	if err = m.Mock(&buf, "Swallower"); err != nil {
-		t.Errorf("m.Mock: %s", err)
-	}
-	golden := filepath.Join("testpackages/blankid", "swallower.golden.go")
-	if err := matchGoldenFile(golden, buf.Bytes()); err != nil {
-		t.Errorf("check golden file: %s", err)
-	}
-}
-
 func TestNothingToReturn(t *testing.T) {
 	m, err := New(Config{SrcDir: "testpackages/example"})
 	if err != nil {
@@ -310,23 +271,6 @@ func TestNothingToReturn(t *testing.T) {
 	}
 }
 
-func TestChannelNames(t *testing.T) {
-	m, err := New(Config{SrcDir: "testpackages/channels", StubImpl: true})
-	if err != nil {
-		t.Fatalf("moq.New: %s", err)
-	}
-
-	var buf bytes.Buffer
-	if err = m.Mock(&buf, "Queuer"); err != nil {
-		t.Errorf("m.Mock: %s", err)
-	}
-
-	golden := filepath.Join("testpackages/channels", "queuer_moq.golden.go")
-	if err := matchGoldenFile(golden, buf.Bytes()); err != nil {
-		t.Errorf("check golden file: %s", err)
-	}
-}
-
 func TestImports(t *testing.T) {
 	m, err := New(Config{SrcDir: "testpackages/imports/two"})
 	if err != nil {
@@ -349,6 +293,80 @@ func TestImports(t *testing.T) {
 		if len(strings.Split(s, str)) > 2 {
 			t.Errorf("more than one: \"%s\"", str)
 		}
+	}
+}
+
+func TestMockGolden(t *testing.T) {
+	cases := []struct {
+		name       string
+		cfg        Config
+		interfaces []string
+		goldenFile string
+	}{
+		{
+			// Tests to ensure slice return data type works as expected.
+			// See https://github.com/matryer/moq/issues/124
+			name:       "SliceResult",
+			cfg:        Config{SrcDir: "testpackages/variadic"},
+			interfaces: []string{"Echoer"},
+			goldenFile: filepath.Join("testpackages/variadic", "echoer.golden.go"),
+		},
+		{
+			// Tests generation of mock where a method on the interface uses a
+			// blank identifier.
+			// See https://github.com/matryer/moq/issues/70
+			name:       "BlankID",
+			cfg:        Config{SrcDir: "testpackages/blankid"},
+			interfaces: []string{"Swallower"},
+			goldenFile: filepath.Join("testpackages/blankid", "swallower.golden.go"),
+		},
+		{
+			name:       "ChannelNames",
+			cfg:        Config{SrcDir: "testpackages/channels", StubImpl: true},
+			interfaces: []string{"Queuer"},
+			goldenFile: filepath.Join("testpackages/channels", "queuer_moq.golden.go"),
+		},
+		{
+			// Tests generation of mock when the interface imports a different
+			// package by the same name as it's own.
+			// See https://github.com/matryer/moq/issues/94
+			name:       "PkgShadow",
+			cfg:        Config{SrcDir: "testpackages/shadow/http", PkgName: "mock"},
+			interfaces: []string{"Thing"},
+			goldenFile: filepath.Join("testpackages/shadow/mock", "thing_moq.golden.go"),
+		},
+		{
+			// Tests generation of mock when a method parameter shadows an
+			// imported package name.
+			name:       "ParamShadow",
+			cfg:        Config{SrcDir: "testpackages/shadow"},
+			interfaces: []string{"Shadower"},
+			goldenFile: filepath.Join("testpackages/shadow", "shadower_moq.golden.go"),
+		},
+		{
+			name:       "ImportAlias",
+			cfg:        Config{SrcDir: "testpackages/importalias"},
+			interfaces: []string{"MiddleMan"},
+			goldenFile: filepath.Join("testpackages/importalias", "middleman_moq.golden.go"),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := New(tc.cfg)
+			if err != nil {
+				t.Fatalf("moq.New: %s", err)
+			}
+
+			var buf bytes.Buffer
+			if err = m.Mock(&buf, tc.interfaces...); err != nil {
+				t.Errorf("m.Mock: %s", err)
+				return
+			}
+
+			if err := matchGoldenFile(tc.goldenFile, buf.Bytes()); err != nil {
+				t.Errorf("check golden file: %s", err)
+			}
+		})
 	}
 }
 
@@ -417,13 +435,6 @@ func matchGoldenFile(goldenFile string, actual []byte) error {
 	}
 
 	return nil
-}
-
-func TestTemplateFuncs(t *testing.T) {
-	fn := templateFuncs["Exported"].(func(string) string)
-	if fn("var") != "Var" {
-		t.Errorf("exported didn't work: %s", fn("var"))
-	}
 }
 
 func TestVendoredPackages(t *testing.T) {
